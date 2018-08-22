@@ -56,7 +56,6 @@ func compareCerts(caddyCerts map[string]struct{}, certSpotterCerts map[string]st
 			continue
 		} else {
 			log.Printf("[WARNING] Certificate found that caddy is not monitoring, issued by: %v\n", certSpotterCerts[key])
-			fmt.Printf("[WARNING] Certificate found that caddy is not monitoring, issued by: %v\n", certSpotterCerts[key])
 		}
 	}
 }
@@ -72,8 +71,8 @@ func decodeField(value string) []byte {
 // getCaddyCerts retrieves the certificates that caddy monitors and returns them as a map
 // with the key being the bytes of the certificate cast to a string.
 func getCaddyCerts() ([]string, map[string]struct{}) {
-	var caddyCerts = make(map[string]struct{})
-	var caddyDNS = make([]string, 0, 10)
+	var caddyCerts = make(map[string]struct{})//caddyCerts consists of the certificates that Caddy is serving.
+	var caddyDNS = make([]string, 0, 10)//caddyDNS consists of the Subject Alternate Names that Caddy is hosting.
 	for _, inst := range caddy.Instances() {
 		inst.StorageMu.RLock()
 		certCache, ok := inst.Storage[CertCacheInstStorageKey].(*certificateCache)
@@ -117,12 +116,14 @@ func init() {
 // for.  It then adds them to a set and returns a map of each certificate returned mapped to a string that contains the
 // before/after dates for the certificate, as well as the issuing authority.
 func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcards bool, index int) (map[string]string, int) {
-	retrievedCerts := make(map[string]string)
-	var biggestId, timeToWait int
-	var retryAfter string
+	retrievedCerts := make(map[string]string) //retrievedCerts consists of the bytes of a certificate mapped to the ID, issuer name,
+	//and before/after values so that you can identify the certificate if it is not hosted by Caddy.
+	var biggestId, timeToWait int //biggestId is the most recent certificate id that is returned from CertSpotter.
+	//timeToWait is the time returned from CertSpotter that they want you to wait before you query again.
+	var retryAfter string //retryAfter is used to get the timeToWait value from the response headers.
 	for _, domainName := range caddyCertSANs {
-		concurrent := index
-		var issuanceObjects []SslmateStruct
+		concurrent := index //concurrent is used for the paging of the results, it is set to the last certificate id for each paged result.
+		var issuanceObjects []SslmateStruct //issuanceObjects consists of the issuanceObjects returned from CertSpotter.
 		for ok := true; ok; ok = len(issuanceObjects) > 0 {
 			temp := strconv.Itoa(concurrent)
 			response, err := http.Get(query + prepQuery(domainName,
@@ -183,17 +184,16 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 // monitorCerts continuously monitors the certificates that Caddy serves. monitorCerts queries again
 // after the specified time.
 func monitorCerts() {
-	pause := 0
 	var fetchedCerts map[string]string
 	for {
-		time.Sleep(time.Duration(pause) * time.Second)
 		namesToLookUp, caddyCerts := getCaddyCerts()
 		startingIndex, err := getLatestIndex(FILE_PATH)
 		if err != nil {
 			log.Printf("Error %v while getting starting index, starting at 0", err.Error())
 		}
-		fetchedCerts, pause = lookUpNames(namesToLookUp, BASE_URI, false, false, startingIndex)
+		fetchedCerts, pause := lookUpNames(namesToLookUp, BASE_URI, false, false, startingIndex)
 		compareCerts(caddyCerts, fetchedCerts)
+		time.Sleep(time.Duration(pause) * time.Second)
 	}
 }
 
