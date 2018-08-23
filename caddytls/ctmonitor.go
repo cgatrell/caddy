@@ -157,7 +157,10 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 					}
 					if i == (len(issuanceObjects) - 1) {
 						issuanceId, err := strconv.Atoi(issuance.ID)
-						check(err)
+						if err != nil {
+							log.Printf(err.Error())
+							log.Print("Error occured on line 162 of ctmonitor")
+						}
 						if issuanceId > biggestId {
 							biggestId = issuanceId
 						}
@@ -177,14 +180,19 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 	}
 	putLatestId(biggestId, FILE_PATH)
 	timeToWait, err := strconv.Atoi(retryAfter)
-	check(err)
+	if err != nil {
+		log.Printf(err.Error())
+		log.Print("Error occured on line 185 of ctmonitor, returning 1 hour")
+		timeToWait = 3600
+	}
+	//check(err)
 	return retrievedCerts, timeToWait
 }
 
-// monitorCerts continuously monitors the certificates that Caddy serves. monitorCerts queries again
+// monitorCerts continuously monitors the certificates that Caddy serves. monitorCerts queries again 
 // after the specified time.
 func monitorCerts() {
-	var fetchedCerts map[string]string
+	//var fetchedCerts map[string]string
 	for {
 		namesToLookUp, caddyCerts := getCaddyCerts()
 		startingIndex, err := getLatestIndex(FILE_PATH)
