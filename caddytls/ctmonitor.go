@@ -95,6 +95,7 @@ func getCaddyCerts() ([]string, map[string]struct{}) {
 func getLatestIndex(fileName string) (int, error) {
 	indexBytes, err := ioutil.ReadFile(fileName)
 	if os.IsNotExist(err) {
+		log.Println("getLatestIndex failed, could not find the file")
 		return 0, nil
 	}
 	if err != nil {
@@ -103,6 +104,7 @@ func getLatestIndex(fileName string) (int, error) {
 	indexStr := strings.TrimSpace(string(indexBytes))
 	index, err := strconv.Atoi(indexStr)
 	if err != nil {
+		log.Println("Error converting file string to int.")
 		return 0, err
 	}
 	return index, nil
@@ -121,15 +123,14 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 	var biggestId, timeToWait int //biggestId is the most recent certificate id that is returned from CertSpotter.
 	//timeToWait is the time returned from CertSpotter that they want you to wait before you query again.
 	var retryAfter string //retryAfter is used to get the timeToWait value from the response headers.
-	for _, domainName := range caddyCertSANs {
+	for _, domainName := range caddyCertSANs {//If the caddyCertSANs is empty, it shouldn't run this at all.
 		concurrent := index //concurrent is used for the paging of the results, it is set to the last certificate id for each paged result.
 		var issuanceObjects []SslmateStruct //issuanceObjects consists of the issuanceObjects returned from CertSpotter.
 		for ok := true; ok; ok = len(issuanceObjects) > 0 {
-			temp := strconv.Itoa(concurrent)
 			response, err := http.Get(query + prepQuery(domainName,
-					subdomains, wildcards, temp))
+					subdomains, wildcards, concurrent))//Maybe change temp field to int and cast as string for output?
 			if err != nil {
-				log.Printf("https get request failed on input %s \nError: %v", prepQuery(domainName, subdomains, wildcards, strconv.Itoa(concurrent)), err)
+				log.Printf("https get request failed on input %s \nError: %v", prepQuery(domainName, subdomains, wildcards, concurrent), err)
 			}
 			defer response.Body.Close()
 			body, err := ioutil.ReadAll(response.Body)
@@ -159,7 +160,7 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 						issuanceId, err := strconv.Atoi(issuance.ID)
 						if err != nil {
 							log.Printf(err.Error())
-							log.Print("Error occured on line 162 of ctmonitor")
+							log.Print("Error occured on line 163 of ctmonitor")
 						}
 						if issuanceId > biggestId {
 							biggestId = issuanceId
@@ -168,13 +169,17 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 					}
 				}
 			} else {
-				finalResponse, err := http.Get(query + prepQuery(domainName,
+				/*finalResponse, err := http.Get(query + prepQuery(domainName,
 					subdomains, wildcards, strconv.Itoa(concurrent)))
 				if err != nil {
 					log.Fatalf("https get request failed on input %s \nError: %v", prepQuery(domainName, subdomains, wildcards, strconv.Itoa(concurrent)), err)
 				}
 				defer finalResponse.Body.Close()
-				retryAfter = finalResponse.Header.Get("Retry-After")	
+				retryAfter = finalResponse.Header.Get("Retry-After")
+				if len(retryAfter) == 0 {
+					retryAfter = "3600"
+				}*/
+				retryAfter = response.Header.Get("Retry-After")
 			}
 		}
 	}
@@ -182,7 +187,7 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 	timeToWait, err := strconv.Atoi(retryAfter)
 	if err != nil {
 		log.Printf(err.Error())
-		log.Print("Error occured on line 185 of ctmonitor, returning 1 hour")
+		log.Print("Error occured on line 186 of ctmonitor, returning 1 hour")
 		timeToWait = 3600
 	}
 	//check(err)
@@ -205,7 +210,7 @@ func monitorCerts() {
 	}
 }
 
-func prepQuery(domainName string, subdomains bool, wildcards bool, index string) string {
+func prepQuery(domainName string, subdomains bool, wildcards bool, index int) string {
 	v:= url.Values{}
 	v.Set("domain", domainName)
 	if wildcards {
@@ -214,7 +219,7 @@ func prepQuery(domainName string, subdomains bool, wildcards bool, index string)
 	if subdomains {
 		v.Set("include_subdomains", "true")
 	}
-	v.Set("after", index)
+	v.Set("after", strconv.Itoa(index))
 	v.Add("expand", "dns_names")
 	v.Add("expand", "issuer")
 	v.Add("expand", "cert")
