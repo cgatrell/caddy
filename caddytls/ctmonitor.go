@@ -21,6 +21,13 @@ const (
 	FILE_PATH string = "./latestCert.txt"
 )
 
+//The config struct will allow me to get the config data from a file (I hope)
+type CtConfig struct {
+	IncludeSubdomains  bool  `json:"subdomains"`
+	IncludeWildCards    bool  `json:"wildCards"`
+}
+
+
 // SslmateStruct is the json response formatting that is used in the program.
 type SslmateStruct struct { 
 	ID           string   `json:"id"`
@@ -114,6 +121,22 @@ func init() {
 	caddy.RegisterEventHook("ctmonitor", startMonitoring)
 }
 
+func loadConfig() (config CtConfig) {
+	configJson, err := os.Open("./ctConfig")
+	if err != nil {
+		log.Printf("loadConfig error: %v", err)
+	}
+	defer configJson.Close()
+	//var config Config
+	err = json.NewDecoder(configJson).Decode(&config)
+	if err != nil {
+		log.Printf("[NOTICE] jsonDecode failed, error: %v\nUsing default values", err)
+		config.IncludeSubdomains = false
+		config.IncludeWildCards = false
+	}
+	return
+}
+
 // lookUpNames queries the certSpotter service for each Subject Alternate Name (SAN) that Caddy is hosting certificates
 // for.  It then adds them to a set and returns a map of each certificate returned mapped to a string that contains the
 // before/after dates for the certificate, as well as the issuing authority.
@@ -180,6 +203,7 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 					retryAfter = "3600"
 				}*/
 				retryAfter = response.Header.Get("Retry-After")
+				log.Printf("retryAfter: %v", retryAfter)
 			}
 		}
 	}
@@ -187,7 +211,7 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 	timeToWait, err := strconv.Atoi(retryAfter)
 	if err != nil {
 		log.Printf(err.Error())
-		log.Print("Error occured on line 186 of ctmonitor, returning 1 hour")
+		log.Print("Error occured on line 190 of ctmonitor, returning 1 hour")
 		timeToWait = 3600
 	}
 	//check(err)
@@ -198,13 +222,21 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 // after the specified time.
 func monitorCerts() {
 	//var fetchedCerts map[string]string
+
+	//var config []Config
+	config := loadConfig()
 	for {
 		namesToLookUp, caddyCerts := getCaddyCerts()
+		if len(namesToLookUp) == 0 {
+			log.Print("Could not retrieve DNS names from Caddy Certificate\nTerminating monitorCerts.")
+			break
+		}
 		startingIndex, err := getLatestIndex(FILE_PATH)
 		if err != nil {
 			log.Printf("Error %v while getting starting index, starting at 0", err.Error())
 		}
-		fetchedCerts, pause := lookUpNames(namesToLookUp, BASE_URI, false, false, startingIndex)
+		//The two false values should be retrieved from a config file. subdomains, wildCards
+		fetchedCerts, pause := lookUpNames(namesToLookUp, BASE_URI, config.IncludeSubdomains, config.IncludeWildCards, startingIndex)
 		compareCerts(caddyCerts, fetchedCerts)
 		time.Sleep(time.Duration(pause) * time.Second)
 	}
@@ -247,3 +279,20 @@ func startMonitoring(eventType caddy.EventName, eventInfo interface{}) error {
 
 
 
+//For testing.
+/*f, err := os.Create("testJson.json")
+if err != nil {
+	log.Fatal(err)
+}
+defer f.Close()
+
+resp, err := http.Get(BASE_URI + prepQuery("gocyrus.net", false, false, 0))
+if err != nil {
+	log.Fatal(err)
+}
+defer resp.Body.Close()
+
+_, err := io.Copy(f, resp.Body)
+if err != nil {
+	log.Fatal(err)
+}*/
