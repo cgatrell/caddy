@@ -20,7 +20,7 @@ const (
 	BASE_URI string = "https://api.certspotter.com/v1/issuances?"
 	FILE_PATH string = "./latestCert.txt"
 )
-
+//TODO Test the config unmarshal etc.  Test with data retrieved from API. See if I can check the log and get ID number?
 //The config struct will allow me to get the config data from a file (I hope)
 type CtConfig struct {
 	IncludeSubdomains  bool  `json:"subdomains"`
@@ -57,7 +57,7 @@ func check(e error) {
 // compareCerts compares the certificates that caddy is serving against the certificates
 // that certSpotter has found, if there are any that don't match the caddy certificates,
 // they are reported to the user.
-func compareCerts(caddyCerts map[string]struct{}, certSpotterCerts map[string]string) {
+func CompareCerts(caddyCerts map[string]struct{}, certSpotterCerts map[string]string) {
 	for key := range certSpotterCerts {
 		if _, ok := caddyCerts[key]; ok {
 			continue
@@ -67,7 +67,7 @@ func compareCerts(caddyCerts map[string]struct{}, certSpotterCerts map[string]st
 	}
 }
 
-func decodeField(value string) []byte {
+func DecodeField(value string) []byte {
 	bytes, err := b64.StdEncoding.DecodeString(value)
 	if err != nil {
 		log.Fatalf("Decoding failed: %v", err)
@@ -167,7 +167,7 @@ func lookUpNames(caddyCertSANs []string, query string, subdomains bool, wildcard
 			}
 			if len(issuanceObjects) > 0 {
 				for i, issuance := range issuanceObjects {
-					bytes := decodeField(issuance.Cert.Data)
+					bytes := DecodeField(issuance.Cert.Data)
 					aKey := string(bytes)
 					if _, ok := retrievedCerts[aKey]; ok {
 						continue
@@ -228,7 +228,9 @@ func monitorCerts() {
 	for {
 		namesToLookUp, caddyCerts := getCaddyCerts()
 		if len(namesToLookUp) == 0 {
-			log.Print("Could not retrieve DNS names from Caddy Certificate\nTerminating monitorCerts.")
+			log.Print("Could not retrieve DNS names from Caddy Certificate\n" +
+                        "Make sure that you are serving on port 80 & 443\n" +
+                        "Terminating monitorCerts.")
 			break
 		}
 		startingIndex, err := getLatestIndex(FILE_PATH)
@@ -237,7 +239,7 @@ func monitorCerts() {
 		}
 		//The two false values should be retrieved from a config file. subdomains, wildCards
 		fetchedCerts, pause := lookUpNames(namesToLookUp, BASE_URI, config.IncludeSubdomains, config.IncludeWildCards, startingIndex)
-		compareCerts(caddyCerts, fetchedCerts)
+		CompareCerts(caddyCerts, fetchedCerts)
 		time.Sleep(time.Duration(pause) * time.Second)
 	}
 }
